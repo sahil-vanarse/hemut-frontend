@@ -123,6 +123,6 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 ## Contact
 
-Your Name - Sahil Vanarse - sahilvanarse9@example.com
+Your Name - Sahil Vanarse - sahilvanarse9@gmail.com
 
 Project Link: [https://github.com/sahil-vanarse/hemut-yc](https://github.com/sahil-vanarse/hemut-frontend)
