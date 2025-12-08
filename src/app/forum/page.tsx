@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
+import ReactMarkdown from 'react-markdown'
 
 interface User {
   user_id: string
@@ -50,6 +51,7 @@ export default function ForumPage() {
   const selectedQuestionIdRef = useRef<string | null>(null)
   const [newAnswer, setNewAnswer] = useState('')
   const [aiSuggestion, setAiSuggestion] = useState('')
+  const [isGeneratingAI, setIsGeneratingAI] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const [wsConnected, setWsConnected] = useState(false)
@@ -354,6 +356,9 @@ export default function ForumPage() {
     console.log('Opening answer modal for question:', question.question_id)
     setSelectedQuestion(question)
     selectedQuestionIdRef.current = String(question.question_id)
+    // Reset AI suggestion when opening a new question
+    setAiSuggestion('')
+    setIsGeneratingAI(false)
     // Prefill from cache if available
     const cached = answersCache[String(question.question_id)]
     if (cached) {
@@ -438,6 +443,9 @@ export default function ForumPage() {
   const handleGetAISuggestion = async () => {
     if (!selectedQuestion) return
 
+    setIsGeneratingAI(true)
+    setAiSuggestion('')
+
     try {
       const response = await fetch(`${API_URL}/api/questions/${selectedQuestion.question_id}/suggest`, {
         method: 'POST'
@@ -447,6 +455,15 @@ export default function ForumPage() {
       toast.success('AI suggestion generated!')
     } catch (error) {
       toast.error('Failed to get AI suggestion')
+    } finally {
+      setIsGeneratingAI(false)
+    }
+  }
+
+  const handleCopyAISuggestion = () => {
+    if (aiSuggestion) {
+      navigator.clipboard.writeText(aiSuggestion)
+      toast.success('AI suggestion copied to clipboard!')
     }
   }
 
@@ -598,6 +615,7 @@ export default function ForumPage() {
                   selectedQuestionIdRef.current = null
                   setAnswers([])
                   setAiSuggestion('')
+                  setIsGeneratingAI(false)
                 }}
                 className="text-slate-500 hover:text-slate-700 transition"
               >
@@ -612,14 +630,36 @@ export default function ForumPage() {
             {/* AI Suggestion */}
             <button
               onClick={handleGetAISuggestion}
-              className="mb-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-500 text-white font-medium hover:bg-purple-600 transition text-sm"
+              disabled={isGeneratingAI}
+              className="mb-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-purple-500 text-white font-medium hover:bg-purple-600 transition text-sm disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              🤖 Get AI Suggestion
+              🤖 {isGeneratingAI ? 'Generating...' : 'Get AI Suggestion'}
             </button>
 
-            {aiSuggestion && (
+            {(isGeneratingAI || aiSuggestion) && (
               <div className="bg-purple-50 border border-purple-200 p-4 rounded-xl mb-4">
-                <p className="text-sm text-slate-900"><strong>AI Suggestion:</strong> {aiSuggestion}</p>
+                <div className="flex justify-between items-start mb-2">
+                  <p className="text-sm font-semibold text-purple-900">AI Suggestion:</p>
+                  {aiSuggestion && (
+                    <button
+                      onClick={handleCopyAISuggestion}
+                      className="inline-flex items-center gap-1 px-3 py-1 rounded-md bg-purple-100 text-purple-700 hover:bg-purple-200 transition text-xs font-medium"
+                      title="Copy to clipboard"
+                    >
+                      📋 Copy
+                    </button>
+                  )}
+                </div>
+                {isGeneratingAI ? (
+                  <div className="flex items-center gap-2 text-purple-700">
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-purple-700 border-t-transparent"></div>
+                    <span className="text-sm">Generating answer...</span>
+                  </div>
+                ) : (
+                  <div className="prose prose-sm max-w-none text-slate-900 prose-headings:text-slate-900 prose-p:text-slate-800 prose-strong:text-slate-900 prose-code:text-purple-700 prose-pre:bg-slate-800">
+                    <ReactMarkdown>{aiSuggestion}</ReactMarkdown>
+                  </div>
+                )}
               </div>
             )}
 
