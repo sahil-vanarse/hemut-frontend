@@ -670,7 +670,9 @@ export default function ForumPage() {
               ) : (
                 answers.map((answer) => (
                   <div key={answer.answer_id} className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                    <p className="text-slate-900 mb-2">{answer.answer}</p>
+                    <div className="prose prose-sm max-w-none text-slate-900 prose-headings:text-slate-900 prose-p:text-slate-800 prose-strong:text-slate-900 prose-code:text-blue-700 prose-pre:bg-slate-800 mb-2">
+                      <ReactMarkdown>{answer.answer}</ReactMarkdown>
+                    </div>
                     <div className="text-xs text-slate-500">
                       By: {answer.username || 'Anonymous'} • {new Date(answer.created_at).toLocaleString()}
                     </div>
