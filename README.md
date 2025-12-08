@@ -21,8 +21,7 @@ A modern Q&A forum built with Next.js, TypeScript, and Tailwind CSS, featuring r
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/hemut-yc.git
-   cd hemut-yc/hemut-frontend
+   git clone https://github.com/sahil-vanarse/hemut-frontend.git
    ```
 
 2. Install dependencies:
@@ -109,17 +108,6 @@ npm test
 3. Add environment variables in the Vercel dashboard
 4. Deploy!
 
-### Docker
-
-1. Build the Docker image:
-   ```bash
-   docker build -t hemut-frontend .
-   ```
-
-2. Run the container:
-   ```bash
-   docker run -p 3000:3000 hemut-frontend
-   ```
 
 ## Contributing
 
@@ -135,6 +123,6 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 ## Contact
 
-Your Name - [@yourtwitter](https://twitter.com/yourtwitter) - email@example.com
+Your Name - Sahil Vanarse - sahilvanarse9@example.com
 
-Project Link: [https://github.com/yourusername/hemut-yc](https://github.com/yourusername/hemut-yc)
+Project Link: [https://github.com/sahil-vanarse/hemut-yc](https://github.com/sahil-vanarse/hemut-frontend)
