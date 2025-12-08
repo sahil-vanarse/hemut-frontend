@@ -20,7 +20,7 @@ interface Question {
 }
 
 interface Answer {
-  answer_id: number
+  answer_id: number | string
   question_id: string
   user_id: number | string | null
   answer: string
@@ -29,7 +29,14 @@ interface Answer {
 }
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/ws'
+// Auto-detect wss:// if API_URL uses https://, otherwise use ws://
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 
+  (API_URL.startsWith('https://') 
+    ? API_URL.replace('https://', 'wss://') + '/ws'
+    : API_URL.replace('http://', 'ws://') + '/ws')
+
+console.log('WebSocket URL:', WS_URL)
+console.log('API URL:', API_URL)
 
 export default function ForumPage() {
   const router = useRouter()
@@ -39,9 +46,13 @@ export default function ForumPage() {
   const [loading, setLoading] = useState(false)
   const [selectedQuestion, setSelectedQuestion] = useState<Question | null>(null)
   const [answers, setAnswers] = useState<Answer[]>([])
+  const [answersCache, setAnswersCache] = useState<Record<string, Answer[]>>({})
+  const selectedQuestionIdRef = useRef<string | null>(null)
   const [newAnswer, setNewAnswer] = useState('')
   const [aiSuggestion, setAiSuggestion] = useState('')
   const wsRef = useRef<WebSocket | null>(null)
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const [wsConnected, setWsConnected] = useState(false)
 
   useEffect(() => {
     // Check if user is logged in
@@ -65,6 +76,9 @@ export default function ForumPage() {
       if (wsRef.current) {
         wsRef.current.close()
       }
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current)
+      }
     }
   }, [])
 
@@ -74,48 +88,170 @@ export default function ForumPage() {
       return
     }
 
+    console.log('Attempting WebSocket connection to:', WS_URL)
+
+    // Close existing connection if any
+    if (wsRef.current) {
+      console.log('Closing existing WebSocket connection')
+      wsRef.current.close()
+    }
+
     const ws = new WebSocket(WS_URL)
     
     ws.onopen = () => {
-      console.log('WebSocket connected')
+      console.log('✅ WebSocket connected successfully to:', WS_URL)
+      setWsConnected(true)
+      // Clear polling if WebSocket is working
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current)
+        pollIntervalRef.current = null
+      }
+      // Send ping to keep connection alive
+      const pingInterval = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'ping' }))
+          console.log('Sent ping to keep connection alive')
+        } else {
+          console.log('WebSocket not open, clearing ping interval')
+          clearInterval(pingInterval)
+        }
+      }, 30000) // Ping every 30 seconds
+      
+      // Store interval ID for cleanup
+      ;(ws as any).pingInterval = pingInterval
     }
     
     ws.onmessage = (event) => {
-      const data = JSON.parse(event.data)
-      
-      if (data.type === 'new_question') {
-        setQuestions(prev => {
-          if (prev.some(q => q.question_id === data.data.question_id)) {
-            return prev
-          }
-          return [data.data, ...prev]
-        })
-        if (user) {
-          toast.success('New question received!', { icon: '🔔' })
-        }
-      } else if (data.type === 'question_updated') {
-        setQuestions(prev =>
-          prev.map(q => (q.question_id === data.data.question_id ? data.data : q))
-        )
-      } else if (data.type === 'new_answer') {
-        if (selectedQuestion?.question_id === data.data.question_id) {
-          setAnswers(prev => {
-            if (prev.some(a => a.answer_id === data.data.answer_id)) {
+      try {
+        const data = JSON.parse(event.data)
+        console.log('WebSocket message received:', data.type)
+        
+        if (data.type === 'new_question') {
+          console.log('Processing new_question:', data.data)
+          setQuestions(prev => {
+            // Check if question already exists
+            const exists = prev.some(q => q.question_id === data.data.question_id)
+            if (exists) {
+              console.log('Question already exists, skipping:', data.data.question_id)
               return prev
             }
-            return [...prev, data.data]
+            // Ensure username is set
+            const questionData = {
+              ...data.data,
+              username: data.data.username || 'Anonymous'
+            }
+            console.log('Adding new question to list:', questionData)
+            return [questionData, ...prev]
           })
+          toast.success('New question received!', { icon: '🔔' })
+        } else if (data.type === 'question_updated') {
+          console.log('Processing question_updated:', data.data)
+          setQuestions(prev =>
+            prev.map(q => {
+              if (q.question_id === data.data.question_id) {
+                const updated = {
+                  ...data.data,
+                  username: data.data.username || q.username || 'Anonymous'
+                }
+                console.log('Updating question:', updated)
+                return updated
+              }
+              return q
+            })
+          )
+        } else if (data.type === 'new_answer') {
+          console.log('🔔 WebSocket message received: new_answer', data.data)
+          
+          // Use ref to check if modal is open (more reliable than state in async handlers)
+          const currentSelectedQId = selectedQuestionIdRef.current
+          const answerQId = String(data.data.question_id)
+          const questionIdMatch = currentSelectedQId !== null && currentSelectedQId === answerQId
+          
+          console.log('🔍 Answer WebSocket handler check:', {
+            selectedQuestionIdRef: currentSelectedQId,
+            answerQId,
+            match: questionIdMatch,
+            selectedQuestionState: selectedQuestion?.question_id
+          })
+          
+          if (questionIdMatch) {
+            console.log('✅ Answer modal is open for this question, updating answers list')
+            setAnswers(prev => {
+              // Check if answer already exists (handle both number and string IDs)
+              const answerIdStr = String(data.data.answer_id)
+              const exists = prev.some(a => {
+                const aIdStr = String(a.answer_id)
+                return aIdStr === answerIdStr
+              })
+              
+              if (exists) {
+                console.log('Answer already exists in list, skipping:', data.data.answer_id)
+                return prev
+              }
+              
+              const newAnswer: Answer = {
+                ...data.data,
+                username: data.data.username || 'Anonymous'
+              }
+              console.log('➕ Adding new answer to list. Previous count:', prev.length)
+              const updated = [...prev, newAnswer]
+              console.log('✅ New answer added! Updated count:', updated.length, 'Answer:', newAnswer)
+              // update cache too
+              setAnswersCache(cache => ({
+                ...cache,
+                [answerQId]: updated
+              }))
+              return updated
+            })
+          } else {
+            console.log('⚠️ Answer modal not open for this question')
+            console.log('Selected question ID (ref):', currentSelectedQId)
+            console.log('Answer question ID:', answerQId)
+            // Show notification - when user opens modal, fresh fetch will include it
+            // Update cache so that opening the modal later will show the new answer
+            setAnswersCache(cache => {
+              const existing = cache[answerQId] || []
+              const answerIdStr = String(data.data.answer_id)
+              const exists = existing.some(a => String(a.answer_id) === answerIdStr)
+              if (exists) return cache
+              const updated = [...existing, { ...data.data, username: data.data.username || 'Anonymous' }]
+              return { ...cache, [answerQId]: updated }
+            })
+            toast.success(`New answer posted!`, { icon: '💬' })
+          }
+        } else if (data.type === 'pong') {
+          // Ignore pong messages
         }
+      } catch (error) {
+        console.error('Error parsing WebSocket message:', error, event.data)
       }
     }
     
     ws.onerror = (error) => {
-      console.error('WebSocket error:', error)
+      console.error('❌ WebSocket error:', error)
+      console.error('WebSocket URL was:', WS_URL)
+      console.error('WebSocket readyState:', ws.readyState)
     }
     
-    ws.onclose = () => {
-      console.log('WebSocket disconnected, reconnecting...')
-      setTimeout(setupWebSocket, 3000)
+    ws.onclose = (event) => {
+      console.log('⚠️ WebSocket disconnected. Code:', event.code, 'Reason:', event.reason, 'WasClean:', event.wasClean)
+      setWsConnected(false)
+      // Clear ping interval if it exists
+      if ((ws as any).pingInterval) {
+        clearInterval((ws as any).pingInterval)
+      }
+      // Fallback to polling if WebSocket fails
+      if (!pollIntervalRef.current) {
+        console.log('WebSocket failed, falling back to polling every 5 seconds')
+        pollIntervalRef.current = setInterval(() => {
+          fetchQuestions()
+        }, 5000)
+      }
+      // Only reconnect if it wasn't a clean close (code 1000)
+      if (event.code !== 1000) {
+        console.log('Reconnecting WebSocket in 3 seconds...')
+        setTimeout(setupWebSocket, 3000)
+      }
     }
     
     wsRef.current = ws
@@ -215,13 +351,28 @@ export default function ForumPage() {
   }
 
   const handleViewAnswers = async (question: Question) => {
+    console.log('Opening answer modal for question:', question.question_id)
     setSelectedQuestion(question)
+    selectedQuestionIdRef.current = String(question.question_id)
+    // Prefill from cache if available
+    const cached = answersCache[String(question.question_id)]
+    if (cached) {
+      console.log('Using cached answers for question:', question.question_id, 'Count:', cached.length)
+      setAnswers(cached)
+    }
     
     try {
       const response = await fetch(`${API_URL}/api/answers/${question.question_id}`)
       const data = await response.json()
-      setAnswers(data.answers)
+      console.log('Fetched answers for question:', question.question_id, 'Answers:', data.answers)
+      const fetched = data.answers || []
+      setAnswers(fetched)
+      setAnswersCache(prev => ({
+        ...prev,
+        [String(question.question_id)]: fetched
+      }))
     } catch (error) {
+      console.error('Failed to fetch answers:', error)
       toast.error('Failed to fetch answers')
     }
   }
@@ -231,6 +382,10 @@ export default function ForumPage() {
     
     if (!newAnswer.trim()) {
       toast.error('Answer cannot be empty')
+      return
+    }
+    if (!selectedQuestion) {
+      toast.error('Please open a question before answering')
       return
     }
 
@@ -247,14 +402,31 @@ export default function ForumPage() {
 
       if (response.ok) {
         const data = await response.json()
+        console.log('Answer submitted successfully:', data.answer)
         toast.success('Answer submitted!')
         setNewAnswer('')
-        setAnswers(prev => {
-          if (prev.some(a => a.answer_id === data.answer?.answer_id)) {
-            return prev
-          }
-          return [...prev, data.answer].filter(Boolean)
-        })
+        // Optimistically add answer - WebSocket will also send it but this ensures immediate update
+        if (data.answer) {
+          setAnswers(prev => {
+            if (prev.some(a => a.answer_id === data.answer.answer_id)) {
+              console.log('Answer already in list, skipping optimistic add')
+              return prev
+            }
+            const answerWithUsername = {
+              ...data.answer,
+              username: data.answer.username || user?.username || 'Anonymous'
+            }
+            console.log('Adding answer optimistically:', answerWithUsername)
+            const updated = [...prev, answerWithUsername]
+            // sync cache for this question
+            const qid = String(selectedQuestion.question_id)
+            setAnswersCache(cache => ({
+              ...cache,
+              [qid]: updated
+            }))
+            return updated
+          })
+        }
       } else {
         toast.error('Failed to submit answer')
       }
@@ -421,7 +593,9 @@ export default function ForumPage() {
               <h3 className="text-xl font-semibold text-slate-900">Answers</h3>
               <button
                 onClick={() => {
+                  console.log('Closing answer modal')
                   setSelectedQuestion(null)
+                  selectedQuestionIdRef.current = null
                   setAnswers([])
                   setAiSuggestion('')
                 }}
