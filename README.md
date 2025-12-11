@@ -79,48 +79,9 @@ hemut-frontend/
 - `npm run lint` - Run ESLint
 - `npm run format` - Format code with Prettier
 
-## Styling
-
-This project uses:
-- [Tailwind CSS](https://tailwindcss.com/) for utility-first CSS
-- [Framer Motion](https://www.framer.com/motion/) for animations
-- [React Icons](https://react-icons.github.io/react-icons/) for icons
-
-## State Management
-
-- React Context API for global state
-- Custom hooks for data fetching and state management
-- WebSockets for real-time updates
-
-## Testing
-
-To run tests:
-```bash
-npm test
-```
-
 ## Deployment
 
-### Vercel
-
-1. Push your code to a GitHub/GitLab/Bitbucket repository
-2. Import the project on Vercel
-3. Add environment variables in the Vercel dashboard
-4. Deploy!
-
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## License
-
-Distributed under the MIT License. See `LICENSE` for more information.
-
+### Render
 ## Contact
 
 Your Name - Sahil Vanarse - sahilvanarse9@gmail.com
